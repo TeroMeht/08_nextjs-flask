@@ -64,11 +64,12 @@ def fetch_data():
 
         # Convert to DataFrame
         df = pd.DataFrame(rows, columns=columns)
-       
+        
         return df
 
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error fetching data: {error}")
+        raise
     finally:
         if connection is not None:
             connection.close()
@@ -90,6 +91,7 @@ def insert_data(row):
 
         if exists:
             raise ValueError(f"Symbol {row['symbol']} already exists in the database.")
+        
 
         # Get today's date in 'YYYY-MM-DD' format
         today_date = datetime.today().strftime('%Y-%m-%d')
@@ -98,6 +100,7 @@ def insert_data(row):
         allocation = row.get('allocation', 0)
         avg_cost = row.get('avg_cost', 0)
         value = row.get('value', 0)
+        quantity = row.get('quantity', 0)
         current_price = row.get('price', 0)  # Use 'price' from the row data
         change = row.get('change', 0)
 
@@ -106,20 +109,37 @@ def insert_data(row):
             INSERT INTO Positions (allocation, symbol, quantity, open_date, avg_cost, value, current_price, change)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
         """
-        # Execute the insert query with the row data
-        crsr.execute(insert_query, (
-            allocation, 
-            row['symbol'], 
-            row['quantity'], 
-            today_date,  # Use today's date as open_date
-            row['price'], 
-            value, 
-            current_price,  # Use the 'price' field from the row
-            change
-        ))
+
+        if row['symbol'] == 'CASH':
+            # Execute the insert query with the row data
+            crsr.execute(insert_query, (
+                allocation, 
+                row['symbol'], 
+                quantity, 
+                today_date,  # Use today's date as open_date
+                row['price'], 
+                row['quantity'], 
+                current_price,  # Use the 'price' field from the row
+                change
+            ))
+        else:
+            # Execute the insert query with the row data
+            crsr.execute(insert_query, (
+                allocation, 
+                row['symbol'], 
+                row['quantity'], 
+                today_date,  # Use today's date as open_date
+                row['price'], 
+                value, 
+                current_price,  # Use the 'price' field from the row
+                change
+            ))
+
+
 
         # Commit the transaction
         connection.commit()
+        
         print('Row inserted successfully in Positions table.')
 
     except (Exception, psycopg2.DatabaseError) as error:
@@ -173,17 +193,33 @@ def update_current_stock_prices():
             print('Database connection terminated.')
 
 
-# Jos exit niin tätä kutsutaan
-# Function to delete a row from the Positions table by symbol
-def delete_data_by_symbol(symbol: str):
+# Exit from position
+def delete_data_by_symbol(symbol: str, sell_price:float, quantity_to_decrease: int):
 
     """Delete a row from the Positions table based on the symbol."""
     connection = connect_db()
-
+    # Fetch data from the database
+    df = fetch_data()
     try:
         # Create a cursor
         crsr = connection.cursor()
+        cash_row = df[df['symbol'] == 'CASH']
+        current_cash_value = cash_row.iloc[0]['value']
+        # Get the current cash value from df
 
+        # Calculate the adjustment amount
+        amount = quantity_to_decrease * sell_price
+
+        # Update the cash value
+        updated_cash_value = current_cash_value + amount
+
+        # Update the cash position in the database
+        update_cash_query = """
+            UPDATE Positions
+            SET value = %s
+            WHERE symbol = 'CASH';
+        """
+        crsr.execute(update_cash_query, (updated_cash_value,))
         # Check if the symbol exists
         check_query = "SELECT 1 FROM Positions WHERE symbol = %s;"
         crsr.execute(check_query, (symbol,))
@@ -200,6 +236,8 @@ def delete_data_by_symbol(symbol: str):
         # Execute the delete query with the symbol
         crsr.execute(delete_query, (symbol,))
 
+        print(f'CASH position updated. New cash value: {updated_cash_value}.')
+
         # Commit the transaction
         connection.commit()
         print(f'Row with symbol {symbol} deleted successfully from Positions table.')
@@ -211,7 +249,6 @@ def delete_data_by_symbol(symbol: str):
         if connection is not None:
             connection.close()
             print('Database connection terminated.')
-
 
 
 # Käy laskemassa kunkin position arvon nykyisellä hinnalla ja asettaa value kentän
@@ -231,8 +268,7 @@ def calculate_and_update_values():
             current_price = row['current_price']
 
             if symbol == 'CASH':
-                # If symbol is CASH, set value to quantity
-                value = quantity
+               continue
             else:
                 # Calculate value as quantity * current_price
                 if current_price is not None and quantity is not None:
@@ -351,7 +387,7 @@ def calculate_and_update_changes():
 
 
 # Addaa positioon
-def update_average_price_and_quantity(symbol: str, new_price: float, new_quantity: int):
+def update_average_price_and_quantity(symbol: str, buy_price: float, quantity_to_increase: int):
     """Calculate and update the new average price and quantity for a given position in the database."""
     # Fetch data from the database
     df = fetch_data() 
@@ -375,8 +411,8 @@ def update_average_price_and_quantity(symbol: str, new_price: float, new_quantit
         current_quantity = int(current_quantity)
 
         # Calculate the new average price
-        total_value = (current_avg_price * current_quantity) + (new_price * new_quantity)
-        total_quantity = current_quantity + new_quantity
+        total_value = (current_avg_price * current_quantity) + (buy_price * quantity_to_increase)
+        total_quantity = current_quantity + quantity_to_increase
         new_avg_price = total_value / total_quantity if total_quantity != 0 else 0
 
         # Update the average price and quantity in the Positions table
@@ -387,7 +423,26 @@ def update_average_price_and_quantity(symbol: str, new_price: float, new_quantit
             WHERE symbol = %s;
         """
         crsr.execute(update_query, (round(new_avg_price, 2), total_quantity, symbol))
+       
+        cash_row = df[df['symbol'] == 'CASH']
+        current_cash_value = cash_row.iloc[0]['value']
+        # Get the current cash value from df
 
+        # Calculate the adjustment amount
+        amount = quantity_to_increase * buy_price
+
+        # Update the cash value
+        updated_cash_value = current_cash_value - amount
+
+        # Update the cash position in the database
+        update_cash_query = """
+            UPDATE Positions
+            SET value = %s
+            WHERE symbol = 'CASH';
+        """
+        crsr.execute(update_cash_query, (updated_cash_value,))
+        print(f'CASH position updated. New cash value: {updated_cash_value}.')
+        
         # Commit the transaction
         connection.commit()
         print(f'Average price for {symbol} updated to {new_avg_price:.2f}. Quantity updated to {total_quantity}.')
@@ -401,11 +456,9 @@ def update_average_price_and_quantity(symbol: str, new_price: float, new_quantit
             print('Database connection terminated.')
 
 
-
 # Trimmaa positiota
-def decrease_quantity(symbol: str, quantity_to_decrease: int):
-    """Decrease the quantity for a given symbol in the database."""
-    # Fetch data from the database
+def decrease_quantity(symbol: str, sell_price:float, quantity_to_decrease: int):
+
     df = fetch_data()
     connection = connect_db()
 
@@ -440,6 +493,29 @@ def decrease_quantity(symbol: str, quantity_to_decrease: int):
         """
         crsr.execute(update_query, (new_quantity, symbol))
 
+
+        cash_row = df[df['symbol'] == 'CASH']
+        current_cash_value = cash_row.iloc[0]['value']
+        # Get the current cash value from df
+
+        # Calculate the adjustment amount
+        amount = quantity_to_decrease * sell_price
+
+        # Update the cash value
+        updated_cash_value = current_cash_value + amount
+
+        # Update the cash position in the database
+        update_cash_query = """
+            UPDATE Positions
+            SET value = %s
+            WHERE symbol = 'CASH';
+        """
+        crsr.execute(update_cash_query, (updated_cash_value,))
+        print(f'CASH position updated. New cash value: {updated_cash_value}.')
+
+
+
+
         # Commit the transaction
         connection.commit()
         print(f'Quantity for {symbol} decreased by {quantity_to_decrease}. New quantity is {new_quantity}.')
@@ -451,3 +527,5 @@ def decrease_quantity(symbol: str, quantity_to_decrease: int):
         if connection is not None:
             connection.close()
             print('Database connection terminated.')
+
+
