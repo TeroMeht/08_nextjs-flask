@@ -31,12 +31,28 @@ const FormComponent: React.FC<FormComponentProps> = ({ onSubmit }) => {
     e.preventDefault();
 
 
-    // Check if selectedOption is not empty
-    if (!formData.selectedOption) {
-        setMessage('Please select an option.');
-        setMessageType('error');
-        return; // Exit the function if validation fails
-        }
+    // Validate form data
+    const { symbol, quantity, price, selectedOption } = formData;
+
+
+    if (quantity <= 0) {
+      setMessage('Quantity must be greater than 0.');
+      setMessageType('error');
+      return;
+    }
+
+    if (price <= 0 && symbol.toUpperCase() !== 'CASH') {
+      setMessage('Price must be greater than 0.');
+      setMessageType('error');
+      return;
+    }
+
+    if (!selectedOption) {
+      setMessage('Please select an option.');
+      setMessageType('error');
+      return;
+    }
+    
     // Log the form data to see what will be sent
     console.log('Submitting the following data:', formData);
 

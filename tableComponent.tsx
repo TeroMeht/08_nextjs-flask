@@ -59,7 +59,7 @@ const PositionTable: React.FC<PositionTableProps> = ({ positions }) => {
           <th style={modernThStyle}>Quantity</th>
           <th style={modernThStyle}>Open Date</th>
           <th style={modernThStyle}>Avg Cost</th>
-         {/*  <th style={modernThStyle}>Value</th> */}
+           <th style={modernThStyle}>Value</th> 
           <th style={modernThStyle}>Current Price</th>
           <th style={modernThStyle}>Change</th>
         </tr>
@@ -75,7 +75,7 @@ const PositionTable: React.FC<PositionTableProps> = ({ positions }) => {
             <td style={modernTdStyle}>{position.quantity}</td>
             <td style={modernTdStyle}>{position.open_date}</td>
             <td style={modernTdStyle}>{position.avg_cost}</td>
-         {/*   <td style={modernTdStyle}>{position.value}</td> */}
+        <td style={modernTdStyle}>{position.value}</td> 
             <td style={modernTdStyle}>{position.current_price}</td>
             <td style={modernTdStyle}>{position.change}</td>
           </tr>
