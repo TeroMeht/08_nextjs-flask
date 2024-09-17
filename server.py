@@ -35,11 +35,11 @@ def add_position():
         if selected_option == 'Entry':
             insert_data(data)  # Assuming insert_data handles the actual database insertion
         elif selected_option == 'Exit':
-            delete_data_by_symbol(data.get('symbol'))
+            delete_data_by_symbol(data.get('symbol'), data.get('price'),data.get('quantity'))
         elif selected_option == 'Add':
             update_average_price_and_quantity(data.get('symbol'), data.get('price'),data.get('quantity'))
         elif selected_option == 'Trim':
-            decrease_quantity(data.get("symbol"),data.get('quantity'))
+            decrease_quantity(data.get("symbol"),data.get('price'),data.get('quantity'))
     
         return jsonify({'status': 'success', 'message': 'Data inserted successfully'})
     
